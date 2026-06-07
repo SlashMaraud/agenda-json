@@ -62,7 +62,7 @@ jobs:
       - name: Optimize JSON
         run: |
           echo "Optimizando JSON..."
-          jq -c . hashes.json.tmp > hashes.json
+          jq -c . hashes.json.tmp > hashes.json || exit 0
 
       - name: Commit changes
         run: |
