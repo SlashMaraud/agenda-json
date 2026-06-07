@@ -30,19 +30,31 @@ jobs:
             cp hashes.json backups/hashes_$(date +"%Y%m%d_%H%M%S").json
           fi
 
-      - name: Download JSON (primary + fallback)
+      - name: Download JSON (primary first, fallback only if primary fails)
         run: |
-          echo "Intentando descargar JSON desde la URL principal..."
-          curl -A "Mozilla/5.0" -s -f -o hashes.json.tmp "$PRIMARY_URL" || true
+          echo "Descargando JSON desde la URL principal..."
+          curl -A "Mozilla/5.0" -s -f -o primary.json "$PRIMARY_URL" || true
 
-          if ! jq empty hashes.json.tmp 2>/dev/null; then
+          # Si primary.json es JSON válido → usarlo
+          if jq empty primary.json 2>/dev/null; then
+            echo "La URL principal devolvió JSON válido."
+            cp primary.json hashes.json.tmp
+          else
             echo "La URL principal falló. Probando URL de respaldo..."
-            curl -A "Mozilla/5.0" -s -f -o hashes.json.tmp "$BACKUP_URL" || true
+            curl -A "Mozilla/5.0" -s -f -o backup.json "$BACKUP_URL" || true
+
+            if jq empty backup.json 2>/dev/null; then
+              echo "La URL de respaldo devolvió JSON válido."
+              cp backup.json hashes.json.tmp
+            else
+              echo "ERROR: Ninguna fuente devolvió JSON válido."
+              exit 0
+            fi
           fi
 
-          echo "Contenido descargado:"
+          echo "Contenido final descargado:"
           cat hashes.json.tmp
-          echo "---- FIN DEL CONTENIDO ----"
+          echo "---- FIN ----"
 
       - name: Validate JSON
         run: |
@@ -53,8 +65,8 @@ jobs:
             exit 0
           fi
 
-          if [ "$(jq length hashes.json.tmp)" = "0" ]; then
-            echo "ERROR: JSON vacío. No se actualiza."
+          if [ "$(jq '.hashes | length' hashes.json.tmp)" = "0" ]; then
+            echo "ERROR: JSON vacío (sin hashes). No se actualiza."
             exit 0
           fi
 
