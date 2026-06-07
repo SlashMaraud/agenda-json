@@ -2,7 +2,7 @@ name: Sync JSON
 
 on:
   schedule:
-    - cron: "*/30 * * * *"   # Cada 30 minutos
+    - cron: "*/30 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -15,12 +15,33 @@ jobs:
 
       - name: Download JSON from xo.je
         run: |
-          curl -A "Mozilla/5.0" -o hashes.json https://vacaionesenelmar.xo.je/hashes.json
+          echo "Descargando JSON..."
+          curl -A "Mozilla/5.0" -s -f -o hashes.json.tmp https://vacaionesenelmar.xo.je/hashes.json || echo "ERROR" > hashes.json.tmp
+
+          echo "Comprobando si es JSON válido..."
+          if ! jq empty hashes.json.tmp 2>/dev/null; then
+            echo "ERROR: xo.je devolvió HTML o JSON inválido"
+            exit 0
+          fi
+
+          echo "Comprobando si está vacío..."
+          if [ "$(jq length hashes.json.tmp)" = "0" ]; then
+            echo "ERROR: JSON vacío, no se actualiza"
+            exit 0
+          fi
+
+          mv hashes.json.tmp hashes.json
+          echo "JSON válido descargado"
 
       - name: Commit changes
         run: |
+          if git diff --quiet; then
+            echo "No hay cambios que subir"
+            exit 0
+          fi
+
           git config --global user.name "SlashMaraud"
           git config --global user.email "actions@github.com"
           git add hashes.json
-          git commit -m "Auto update JSON" || echo "No changes to commit"
+          git commit -m "Auto update JSON"
           git push
