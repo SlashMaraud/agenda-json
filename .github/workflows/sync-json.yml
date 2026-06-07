@@ -13,7 +13,6 @@ jobs:
       contents: write
 
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PRIMARY_URL: "https://vacacionesenelmar.xo.je/hashes.json"
       BACKUP_URL: "https://raw.githubusercontent.com/SlashMaraud/agenda-json/main/hashes.json"
 
@@ -30,18 +29,31 @@ jobs:
             cp hashes.json backups/hashes_$(date +"%Y%m%d_%H%M%S").json
           fi
 
-      - name: Download JSON (primary first, fallback only if primary fails)
+      - name: Download JSON (with real browser headers)
         run: |
           echo "Descargando JSON desde la URL principal..."
-          curl -A "Mozilla/5.0" -s -f -o primary.json "$PRIMARY_URL" || true
 
-          # Validar si primary.json es JSON válido
+          curl -s -f \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" \
+            -H "Accept: application/json,text/html;q=0.9,*/*;q=0.8" \
+            -H "Accept-Language: es-ES,es;q=0.9,en;q=0.8" \
+            -H "Cache-Control: no-cache" \
+            -o primary.json \
+            "$PRIMARY_URL" || true
+
           if jq empty primary.json 2>/dev/null; then
             echo "La URL principal devolvió JSON válido."
             cp primary.json hashes.json.tmp
           else
             echo "La URL principal falló. Probando URL de respaldo..."
-            curl -A "Mozilla/5.0" -s -f -o backup.json "$BACKUP_URL" || true
+
+            curl -s -f \
+              -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" \
+              -H "Accept: application/json,text/html;q=0.9,*/*;q=0.8" \
+              -H "Accept-Language: es-ES,es;q=0.9,en;q=0.8" \
+              -H "Cache-Control: no-cache" \
+              -o backup.json \
+              "$BACKUP_URL" || true
 
             if jq empty backup.json 2>/dev/null; then
               echo "La URL de respaldo devolvió JSON válido."
@@ -60,13 +72,11 @@ jobs:
         run: |
           echo "Validando JSON..."
 
-          # Validación general
           if ! jq empty hashes.json.tmp 2>/dev/null; then
             echo "ERROR: JSON inválido"
             exit 0
           fi
 
-          # Validación específica: debe existir .hashes y tener elementos
           HASH_COUNT=$(jq '.hashes | length' hashes.json.tmp 2>/dev/null || echo 0)
 
           if [ "$HASH_COUNT" -eq 0 ]; then
@@ -77,8 +87,7 @@ jobs:
           echo "JSON válido con $HASH_COUNT hashes."
 
       - name: Optimize JSON
-        run: |
-          jq -c . hashes.json.tmp > hashes.json
+        run: jq -c . hashes.json.tmp > hashes.json
 
       - name: Commit changes
         run: |
@@ -90,5 +99,5 @@ jobs:
           git config --global user.name "SlashMaraud"
           git config --global user.email "actions@github.com"
           git add hashes.json backups/
-          git commit -m "Auto update JSON (validación corregida)"
+          git commit -m "Auto update JSON (headers + UA fix)"
           git push
