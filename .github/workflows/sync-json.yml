@@ -13,69 +13,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Instalar Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: 18
-
-      - name: Descargar JSON protegido
+      - name: Descargar JSON
         run: |
-          curl -L -o hashes-protegido.json "http://agendadeportiva.x10.mx/hashes.json"
-
-      - name: Crear decode.js
-        run: |
-          cat << 'EOF' > decode.js
-          function base64ToBytes(b64) {
-            return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-          }
-
-          function utf8BytesToString(bytes) {
-            let out = "", i = 0;
-            while (i < bytes.length) {
-              let c = bytes[i++];
-              if (c < 128) {
-                out += String.fromCharCode(c);
-              } else if (c > 191 && c < 224) {
-                let c2 = bytes[i++];
-                out += String.fromCharCode((c & 31) << 6 | (c2 & 63));
-              } else {
-                let c2 = bytes[i++];
-                let c3 = bytes[i++];
-                out += String.fromCharCode((c & 15) << 12 | (c2 & 63) << 6 | (c3 & 63));
-              }
-            }
-            return out;
-          }
-
-          function decodeDataURL(dataUrl) {
-            const parts = dataUrl.split(",");
-            const b64 = parts[1];
-            const bytes = base64ToBytes(b64);
-            return utf8BytesToString(bytes);
-          }
-
-          module.exports = { decodeDataURL };
-          EOF
-
-      - name: Crear process-json.js
-        run: |
-          cat << 'EOF' > process-json.js
-          const fs = require("fs");
-          const { decodeDataURL } = require("./decode");
-
-          const input = fs.readFileSync("hashes-protegido.json", "utf8");
-
-          const decodedText = decodeDataURL(input);
-
-          const json = JSON.parse(decodedText);
-
-          fs.writeFileSync("hashes.json", JSON.stringify(json, null, 2));
-
-          console.log("JSON desprotegido correctamente.");
-          EOF
-
-      - name: Ejecutar decodificación
-        run: node process-json.js
+          curl -L -o hashes.json "http://agendadeportiva.x10.mx/hashes.json"
 
       - name: Commit si hay cambios
         run: |
