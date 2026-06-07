@@ -1,72 +1,86 @@
-name: Sync JSON
+name: Actualizar hashes
 
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "0 * * * *"   # Cada hora
   workflow_dispatch:
 
 jobs:
-  update-json:
+  update:
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: write
-
-    env:
-      SOURCE_URL: "https://raw.githubusercontent.com/SlashMaraud/agenda-json/main/hashes.json"
-
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v3
 
-      - name: Create backup folder
-        run: mkdir -p backups
+      - name: Instalar Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
 
-      - name: Backup previous JSON
+      - name: Descargar JSON protegido
         run: |
-          if [ -f hashes.json ]; then
-            cp hashes.json backups/hashes_$(date +"%Y%m%d_%H%M%S").json
-          fi
+          curl -L -o hashes-protegido.json "http://agendadeportiva.x10.mx/hashes.json"
 
-      - name: Download JSON from GitHub
+      - name: Crear decode.js
         run: |
-          echo "Descargando JSON desde GitHub..."
-          curl -s -f -o hashes.json.tmp "$SOURCE_URL"
+          cat << 'EOF' > decode.js
+          function base64ToBytes(b64) {
+            return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+          }
 
-          echo "Contenido descargado:"
-          cat hashes.json.tmp
-          echo "---- FIN ----"
+          function utf8BytesToString(bytes) {
+            let out = "", i = 0;
+            while (i < bytes.length) {
+              let c = bytes[i++];
+              if (c < 128) {
+                out += String.fromCharCode(c);
+              } else if (c > 191 && c < 224) {
+                let c2 = bytes[i++];
+                out += String.fromCharCode((c & 31) << 6 | (c2 & 63));
+              } else {
+                let c2 = bytes[i++];
+                let c3 = bytes[i++];
+                out += String.fromCharCode((c & 15) << 12 | (c2 & 63) << 6 | (c3 & 63));
+              }
+            }
+            return out;
+          }
 
-      - name: Validate JSON
+          function decodeDataURL(dataUrl) {
+            const parts = dataUrl.split(",");
+            const b64 = parts[1];
+            const bytes = base64ToBytes(b64);
+            return utf8BytesToString(bytes);
+          }
+
+          module.exports = { decodeDataURL };
+          EOF
+
+      - name: Crear process-json.js
         run: |
-          echo "Validando JSON..."
+          cat << 'EOF' > process-json.js
+          const fs = require("fs");
+          const { decodeDataURL } = require("./decode");
 
-          if ! jq empty hashes.json.tmp 2>/dev/null; then
-            echo "ERROR: JSON inválido"
-            exit 0
-          fi
+          const input = fs.readFileSync("hashes-protegido.json", "utf8");
 
-          HASH_COUNT=$(jq '.hashes | length' hashes.json.tmp 2>/dev/null || echo 0)
+          const decodedText = decodeDataURL(input);
 
-          if [ "$HASH_COUNT" -eq 0 ]; then
-            echo "ERROR: JSON válido pero sin hashes. No se actualiza."
-            exit 0
-          fi
+          const json = JSON.parse(decodedText);
 
-          echo "JSON válido con $HASH_COUNT hashes."
+          fs.writeFileSync("hashes.json", JSON.stringify(json, null, 2));
 
-      - name: Optimize JSON
-        run: jq -c . hashes.json.tmp > hashes.json
+          console.log("JSON desprotegido correctamente.");
+          EOF
 
-      - name: Commit changes
+      - name: Ejecutar decodificación
+        run: node process-json.js
+
+      - name: Commit si hay cambios
         run: |
-          if git diff --quiet; then
-            echo "No hay cambios que subir"
-            exit 0
-          fi
-
-          git config --global user.name "SlashMaraud"
-          git config --global user.email "actions@github.com"
-          git add hashes.json backups/
-          git commit -m "Auto update JSON from GitHub"
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git add hashes.json
+          git diff --cached --quiet || git commit -m "Actualización automática de hashes"
           git push
