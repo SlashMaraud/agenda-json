@@ -13,7 +13,7 @@ jobs:
       contents: write
 
     env:
-      PRIMARY_URL: "https://vacacionesenelmar.xo.je/hashes.json"
+      PRIMARY_URL: "https://vacaionesenelmar.xo.je/hashes.json"
       BACKUP_URL: "https://raw.githubusercontent.com/SlashMaraud/agenda-json/main/hashes.json"
 
     steps:
@@ -29,31 +29,17 @@ jobs:
             cp hashes.json backups/hashes_$(date +"%Y%m%d_%H%M%S").json
           fi
 
-      - name: Download JSON (with real browser headers)
+      - name: Download JSON (primary first, fallback only if primary fails)
         run: |
           echo "Descargando JSON desde la URL principal..."
-
-          curl -s -f \
-            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" \
-            -H "Accept: application/json,text/html;q=0.9,*/*;q=0.8" \
-            -H "Accept-Language: es-ES,es;q=0.9,en;q=0.8" \
-            -H "Cache-Control: no-cache" \
-            -o primary.json \
-            "$PRIMARY_URL" || true
+          curl -A "Mozilla/5.0" -s -f -o primary.json "$PRIMARY_URL" || true
 
           if jq empty primary.json 2>/dev/null; then
             echo "La URL principal devolvió JSON válido."
             cp primary.json hashes.json.tmp
           else
             echo "La URL principal falló. Probando URL de respaldo..."
-
-            curl -s -f \
-              -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" \
-              -H "Accept: application/json,text/html;q=0.9,*/*;q=0.8" \
-              -H "Accept-Language: es-ES,es;q=0.9,en;q=0.8" \
-              -H "Cache-Control: no-cache" \
-              -o backup.json \
-              "$BACKUP_URL" || true
+            curl -A "Mozilla/5.0" -s -f -o backup.json "$BACKUP_URL" || true
 
             if jq empty backup.json 2>/dev/null; then
               echo "La URL de respaldo devolvió JSON válido."
@@ -99,5 +85,5 @@ jobs:
           git config --global user.name "SlashMaraud"
           git config --global user.email "actions@github.com"
           git add hashes.json backups/
-          git commit -m "Auto update JSON (headers + UA fix)"
+          git commit -m "Auto update JSON (URL corregida)"
           git push
