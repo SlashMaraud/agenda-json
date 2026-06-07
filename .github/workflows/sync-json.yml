@@ -35,7 +35,7 @@ jobs:
           echo "Descargando JSON desde la URL principal..."
           curl -A "Mozilla/5.0" -s -f -o primary.json "$PRIMARY_URL" || true
 
-          # Si primary.json es JSON válido → usarlo
+          # Validar si primary.json es JSON válido
           if jq empty primary.json 2>/dev/null; then
             echo "La URL principal devolvió JSON válido."
             cp primary.json hashes.json.tmp
@@ -60,19 +60,24 @@ jobs:
         run: |
           echo "Validando JSON..."
 
+          # Validación general
           if ! jq empty hashes.json.tmp 2>/dev/null; then
-            echo "ERROR: El archivo descargado NO es JSON válido. No se actualiza."
+            echo "ERROR: JSON inválido"
             exit 0
           fi
 
-          if [ "$(jq '.hashes | length' hashes.json.tmp)" = "0" ]; then
-            echo "ERROR: JSON vacío (sin hashes). No se actualiza."
+          # Validación específica: debe existir .hashes y tener elementos
+          HASH_COUNT=$(jq '.hashes | length' hashes.json.tmp 2>/dev/null || echo 0)
+
+          if [ "$HASH_COUNT" -eq 0 ]; then
+            echo "ERROR: JSON válido pero sin hashes. No se actualiza."
             exit 0
           fi
+
+          echo "JSON válido con $HASH_COUNT hashes."
 
       - name: Optimize JSON
         run: |
-          echo "Optimizando JSON..."
           jq -c . hashes.json.tmp > hashes.json
 
       - name: Commit changes
@@ -85,5 +90,5 @@ jobs:
           git config --global user.name "SlashMaraud"
           git config --global user.email "actions@github.com"
           git add hashes.json backups/
-          git commit -m "Auto update JSON (validación + fallback + bloqueo de JSON vacío)"
+          git commit -m "Auto update JSON (validación corregida)"
           git push
